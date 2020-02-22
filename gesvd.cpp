@@ -22,12 +22,12 @@
     }                                                                          \
   }()
 
-extern "C" void dgesdd_(char *jobz, int *m, int *n, double *a, int *lda,
-                        double *s, double *u, int *ldu, double *vt, int *ldvt,
-                        double *work, int *lwork, int *iwork, int *info);
-extern "C" void sgesdd_(char *jobz, int *m, int *n, float *a, int *lda,
-                        float *s, float *u, int *ldu, float *vt, int *ldvt,
-                        float *work, int *lwork, int *iwork, int *info);
+extern "C" void dgesvd_(char *jobu, char *jobvt, int *m, int *n, double *a,
+                        int *lda, double *s, double *u, int *ldu, double *vt,
+                        int *ldvt, double *work, int *lwork, int *info);
+extern "C" void sgesvd_(char *jobu, char *jobvt, int *m, int *n, float *a,
+                        int *lda, float *s, float *u, int *ldu, float *vt,
+                        int *ldvt, float *work, int *lwork, int *info);
 
 /*
  * Given a vector of int64_t infos, obtained after a batch operations,
@@ -142,23 +142,23 @@ static inline at::Tensor cloneBatchedColumnMajor(const at::Tensor &src) {
 }
 
 template <class scalar_t, class value_t = scalar_t>
-void lapackSvd(char jobz, int m, int n, scalar_t *a, int lda, value_t *s,
-               scalar_t *u, int ldu, scalar_t *vt, int ldvt, scalar_t *work,
-               int lwork, int *rwork, int *iwork, int *info);
+void lapackSvd(char jobu, char jobvt, int m, int n, scalar_t *a, int lda,
+               value_t *s, scalar_t *u, int ldu, scalar_t *vt, int ldvt,
+               scalar_t *work, int lwork, int *info);
 
 template <>
-void lapackSvd<double>(char jobz, int m, int n, double *a, int lda, double *s,
-                       double *u, int ldu, double *vt, int ldvt, double *work,
-                       int lwork, int *rwork, int *iwork, int *info) {
-  dgesdd_(&jobz, &m, &n, a, &lda, s, u, &ldu, vt, &ldvt, work, &lwork, iwork,
+void lapackSvd<double>(char jobu, char jobvt, int m, int n, double *a, int lda,
+                       double *s, double *u, int ldu, double *vt, int ldvt,
+                       double *work, int lwork, int *info) {
+  dgesvd_(&jobu, &jobvt, &m, &n, a, &lda, s, u, &ldu, vt, &ldvt, work, &lwork,
           info);
 }
 
 template <>
-void lapackSvd<float>(char jobz, int m, int n, float *a, int lda, float *s,
-                      float *u, int ldu, float *vt, int ldvt, float *work,
-                      int lwork, int *rwork, int *iwork, int *info) {
-  sgesdd_(&jobz, &m, &n, a, &lda, s, u, &ldu, vt, &ldvt, work, &lwork, iwork,
+void lapackSvd<float>(char jobu, char jobvt, int m, int n, float *a, int lda,
+                      float *s, float *u, int ldu, float *vt, int ldvt,
+                      float *work, int lwork, int *info) {
+  sgesvd_(&jobu, &jobvt, &m, &n, a, &lda, s, u, &ldu, vt, &ldvt, work, &lwork,
           info);
 }
 
@@ -228,7 +228,7 @@ _create_U_S_VT(const at::Tensor &input, bool some, bool compute_uv) {
 
 template <typename scalar_t>
 static void apply_svd(at::Tensor &self, at::Tensor &U, at::Tensor &S,
-                      at::Tensor &VT, char jobz, std::vector<int64_t> &infos) {
+                      at::Tensor &VT, char job, std::vector<int64_t> &infos) {
   auto self_data = self.data_ptr<scalar_t>();
   auto U_data = U.data_ptr<scalar_t>();
   auto S_data = S.data_ptr<scalar_t>();
@@ -242,24 +242,6 @@ static void apply_svd(at::Tensor &self, at::Tensor &U, at::Tensor &S,
   int info;
   auto m = self.size(-2);
   auto n = self.size(-1);
-  auto mn = std::min(m, n);
-  at::Tensor iwork = at::empty({8 * mn}, at::kInt);
-  auto iwork_data = iwork.data_ptr<int>();
-  at::Tensor rwork;
-  int *rwork_data = nullptr;
-  if (isComplexType(at::typeMetaToScalarType(self.dtype()))) {
-    auto mx = std::max(m, n);
-    int64_t lrwork; // These settings are valid for on LAPACK 3.6+
-    if (jobz == 'N') {
-      lrwork = 7 * mn;
-    } else if (mx > 10 * mn) {
-      lrwork = 7 * mn * mn + 7 * mn;
-    } else {
-      lrwork = std::max(7 * mn * mn + 7 * mn, 2 * mx * mn + 2 * mn * mn + mn);
-    }
-    rwork = at::empty({std::max(int64_t(1), lrwork)}, at::kInt);
-    rwork_data = rwork.data_ptr<int>();
-  }
 
   // Run once, first to get the optimum work size.
   // Since we deal with batches of matrices with the same dimensions, doing this
@@ -270,8 +252,8 @@ static void apply_svd(at::Tensor &self, at::Tensor &U, at::Tensor &S,
   // at::empty()
   int lwork = -1;
   scalar_t wkopt;
-  lapackSvd<scalar_t>(jobz, m, n, self_data, m, S_data, U_data, m, VT_data, n,
-                      &wkopt, lwork, rwork_data, iwork_data, &info);
+  lapackSvd<scalar_t>(job, job, m, n, self_data, m, S_data, U_data, m, VT_data,
+                      n, &wkopt, lwork, &info);
   lwork = wkopt;
   at::Tensor work = at::empty({lwork}, self.options());
   auto work_data = work.data_ptr<scalar_t>();
@@ -283,9 +265,9 @@ static void apply_svd(at::Tensor &self, at::Tensor &U, at::Tensor &S,
     scalar_t *VT_working_ptr = &VT_data[i * VT_stride];
 
     // Compute S, U (optionally) and VT (optionally)
-    lapackSvd<scalar_t>(jobz, m, n, self_working_ptr, m, S_working_ptr,
+    lapackSvd<scalar_t>(job, job, m, n, self_working_ptr, m, S_working_ptr,
                         U_working_ptr, m, VT_working_ptr, n, work_data, lwork,
-                        rwork_data, iwork_data, &info);
+                        &info);
     infos[i] = info;
     if (info != 0) {
       return;
@@ -299,7 +281,7 @@ ge_svd_helper(const at::Tensor &self, bool some, bool compute_uv) {
   int64_t m = self.size(-2), n = self.size(-1);
   int64_t k = std::min(m, n);
 
-  char jobz = compute_uv ? (some ? 'S' : 'A') : 'N';
+  char job = compute_uv ? (some ? 'S' : 'A') : 'N';
 
   at::Tensor U_working_copy, S_working_copy, VT_working_copy;
   std::tie(U_working_copy, S_working_copy, VT_working_copy) =
@@ -310,7 +292,7 @@ ge_svd_helper(const at::Tensor &self, bool some, bool compute_uv) {
 
     DISPATCH_FLOATING_TYPES(self.scalar_type(), "svd_cpu", [&] {
       apply_svd<scalar_t>(self_working_copy, U_working_copy, S_working_copy,
-                          VT_working_copy, jobz, infos);
+                          VT_working_copy, job, infos);
     });
 
     if (self.dim() > 2) {
@@ -438,10 +420,10 @@ at::Tensor svd_backward(const std::vector<torch::autograd::Variable> &grads,
 }
 
 template static void apply_svd<float>(at::Tensor &self, at::Tensor &U,
-                                      at::Tensor &S, at::Tensor &VT, char jobz,
+                                      at::Tensor &S, at::Tensor &VT, char job,
                                       std::vector<int64_t> &infos);
 template static void apply_svd<double>(at::Tensor &self, at::Tensor &U,
-                                       at::Tensor &S, at::Tensor &VT, char jobz,
+                                       at::Tensor &S, at::Tensor &VT, char job,
                                        std::vector<int64_t> &infos);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
