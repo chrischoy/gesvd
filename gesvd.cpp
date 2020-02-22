@@ -335,7 +335,7 @@ ge_svd_helper(const at::Tensor &self, bool some, bool compute_uv) {
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor>
-svd_forward(const at::Tensor &self, bool some, bool compute_uv) {
+svd_forward(const at::Tensor &self, bool some = true, bool compute_uv = true) {
   TORCH_CHECK(self.dim() >= 2,
               "self should have at least 2 dimensions, but has ", self.dim(),
               " dimensions instead");
