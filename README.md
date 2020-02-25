@@ -2,10 +2,10 @@
 
 ## Background
 
-Matrix decomposition is an expensive operation [1](https://mathoverflow.net/questions/161252/what-is-the-time-complexity-of-truncated-svd) which results in various algorithms that can speed up the process.
-LAPACK provides two methods for SVD: 1) GESVD and 2) GESDD. The second method, GESDD, is faster and more scalable as it uses divide and conquer to decompose a large matrix. However, it also introduces from numerical instability which could be potentially devastating for some applications that require precision.
+Matrix decomposition is an expensive operation that can be approximated with various algorithms for speed [[1]](https://mathoverflow.net/questions/161252/what-is-the-time-complexity-of-truncated-svd). Some provide more numerically inaccurate results, but the LAPACK provides two numerically stable methods for SVD: 1) GESVD and 2) GESDD. The second method, GESDD, is faster and more scalable as it uses the divide-and-conquer method to decompose a large matrix, but it also introduces numerical errors that could be potentially devastating for applications that require precision.
 
-Pytorch, (currently Feb 2020, v1.4), uses gesdd by default for SVD and currently there is no option to use GESVD.
+Pytorch, (currently Feb 2020, v1.4), uses GESDD by default for SVD and currently there is no option to choose the GESVD backend. This package is simply a drop-in replacement for differentiable SVD with the GESVD backend if you prefer accuracy over speed.
+
 
 ## Installing the package
 
@@ -18,16 +18,16 @@ python setup.py install
 ## Usage
 
 ```
-from gesvd import GESVDFunction
-svd = GESVDFunction()
+from gesvd import GESVD
+svd = GESVD()
 
 # SVD
 A = torch.randn(4, 5)
-U, S, V = svd.apply(A)
+U, S, V = svd(A)
 
 # Batched SVD
 A = torch.randn(3, 4, 5)
-U, S, V = svd.apply(A)
+U, S, V = svd(A)
 ```
 
 

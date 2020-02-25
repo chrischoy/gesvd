@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 from torch.autograd import Function
 
 import gesvd_cpp
@@ -17,3 +18,13 @@ class GESVDFunction(Function):
     A, U, S, V = ctx.saved_variables
     grad_A = gesvd_cpp.backward([grad_u, grad_s, grad_v], A, True, True, U, S, V)
     return grad_A
+
+
+class GESVD(nn.Module):
+
+  def __init__(self):
+    nn.Module.__init__(self)
+    self.svd = GESVDFunction()
+
+  def forward(self, input):
+    return self.svd.apply(input)
