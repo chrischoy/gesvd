@@ -5,7 +5,7 @@ setup(
     name='gesvd',
     version="0.1",
     ext_modules=[
-        CppExtension('gesvd_cpp', ['gesvd.cpp']),
+        CppExtension('gesvd_cpp', ['gesvd.cpp'], extra_link_args=['-lopenblas']),
     ],
     scripts=['gesvd.py', '__init__.py'],
     cmdclass={
